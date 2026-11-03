@@ -32,7 +32,9 @@ closed bag. Its design goals are to:
 
 ## Platform
 
-- macOS 26 on Apple Silicon (built and tested on MacBook Pro M5).
+- macOS 15 or later on Intel and Apple Silicon. The Intel compatibility port
+  retains the private display guard (macOS 26/27 only) and requires a separately
+  approved real-hardware lid/sleep and recovery trial.
 - Swift 6, SwiftUI content hosted in a custom `NSStatusItem`, Swift Package.
   No Xcode project.
 - `build-app.sh` assembles a minimal `Insomnia.app` bundle (`LSUIElement =
@@ -42,9 +44,10 @@ closed bag. Its design goals are to:
   `--app` after verifying its integrity (only with
   `--allow-unverified-origin`, since it cannot verify where a bundle came
   from), to `~/Applications`. The Release workflow
-  packages the same bundle (`docs/releasing.md`), built for arm64 only;
-  `install.sh --app` stops unless `sysctl -n hw.optional.arm64` reads 1
-  (true on Apple Silicon, also under Rosetta). `install.sh` and
+  packages the same bundle (`docs/releasing.md`), built universally for
+  x86_64 and arm64; `install.sh --app` checks the verified executable's native
+  slice and minimum macOS before sudo. `hw.optional.arm64` identifies Apple
+  Silicon even under Rosetta. `install.sh` and
   `uninstall.sh` take sibling scripts (`build-app.sh`, `backstop.sh`) only
   from a source checkout's `scripts/` folder, with `Package.swift` one level
   up, and never from the folder above their own: the release zip carries

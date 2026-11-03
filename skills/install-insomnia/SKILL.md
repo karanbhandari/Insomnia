@@ -11,10 +11,13 @@ Read that page, then follow these steps. Never run `sudo` yourself and never
 pass a password to it. When a step needs the administrator password, give the
 user the exact command to run in Terminal and wait for them to say it finished.
 
-1. **Check the Mac.** Insomnia needs macOS 26 or later (`sw_vers -productVersion`).
-   Release zips run only on Apple Silicon: `sysctl -n hw.optional.arm64` prints
-   `1`. On an Intel Mac, use "Build from source" and tell the user that build is
-   untested on Intel.
+1. **Check the Mac and revision.** This fork's compatibility port targets macOS
+   15 or later on Intel and Apple Silicon (`sw_vers -productVersion`).
+   Upstream releases, including `v0.1.0`, predate the port; never install them
+   as an Intel/macOS 15 workaround. Follow the fork's README build-only
+   instructions for its compatibility branch. On macOS 15, Settings explains
+   that private display-brightness calls are disabled. Intel hardware
+   lid/sleep and recovery testing still needs separate, supervised approval.
 2. **Pick the channel.** Use the latest stable release unless the user asked
    for the newest nightly. If the release is `v0.1.0`, follow its release notes
    instead of docs/install.md.

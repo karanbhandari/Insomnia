@@ -148,6 +148,8 @@ final class UIStatusTests: XCTestCase {
             return host
         }
         func snapshot(_ host: StatusHostingView) -> Data {
+            // macOS 15 defers offscreen observation invalidation.
+            host.layout()
             host.layoutSubtreeIfNeeded()
             host.displayIfNeeded()
             guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {

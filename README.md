@@ -26,7 +26,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/License-MIT-536D78?style=flat-square"></a>
-  <img alt="macOS 26 or later" src="https://img.shields.io/badge/macOS-26%2B-303336?style=flat-square">
+  <img alt="macOS 15 or later" src="https://img.shields.io/badge/macOS-15%2B-303336?style=flat-square">
   <img alt="Experimental source build" src="https://img.shields.io/badge/Status-experimental-536D78?style=flat-square">
 </p>
 
@@ -41,7 +41,16 @@
 
 ## Install
 
-Requires macOS 26 or later on an Apple Silicon Mac.
+This fork targets macOS 15 or later on Intel and Apple Silicon Macs.
+On macOS 15, private display-brightness calls remain disabled: Settings shows
+the reason, and lid close leaves the display brightness alone. Keyboard
+backlight control runs only if its runtime signatures match this CPU's ABI.
+Real lid/sleep and privileged recovery behavior on Intel still need a
+separately approved, supervised trial; automated tests are not hardware validation.
+
+The upstream releases linked below, including `v0.1.0`, predate this port and
+may require Apple Silicon and macOS 26. For Intel/macOS 15, build this fork's
+compatibility branch, not an upstream release.
 
 Paste this into your coding agent:
 
@@ -61,8 +70,23 @@ anything.
 
 ### Build from source
 
-Needs Xcode with Swift 6.2 or later. Replace `v<version>` with the latest
-stable tag, or a nightly tag for the newest code:
+Needs Xcode with Swift 6.2 or later. For the compatibility port, use this fork:
+
+```bash
+git clone --branch karanbhandari-intel-macos-compatibility https://github.com/karanbhandari/Insomnia.git
+cd Insomnia
+./scripts/build-app.sh --output dist
+```
+
+This only builds an ad-hoc signed, native-architecture `dist/Insomnia.app`;
+it does not install permissions or recovery agents. Add `--universal` to build
+both `x86_64` and `arm64`. Full installation is a separate, privileged step:
+review the changes below before running `./scripts/install.sh`. Without the
+sudoers rule, starting a session fails explicitly; do not treat a bare bundle
+as a complete privileged installation.
+
+For an upstream release (not this compatibility port), replace `v<version>`
+with the stable or nightly tag you chose:
 
 ```bash
 git clone --branch v<version> --depth 1 https://github.com/krishhgg/Insomnia.git

@@ -5,7 +5,13 @@ step and what each one checks. A coding agent can follow
 [skills/install-insomnia](../skills/install-insomnia/SKILL.md), which uses the
 steps on this page.
 
-Requires **macOS 26 or later on an Apple Silicon Mac**.
+This fork targets **macOS 15 or later on Intel and Apple Silicon Macs**.
+Use the compatibility branch of `karanbhandari/Insomnia` for this port:
+upstream releases, including `v0.1.0`, are not retroactively made compatible.
+On macOS 15, display darkening is refused by the existing private-API guard
+and Settings explains why. Keyboard backlight control checks the native
+Objective-C signatures before any call. Intel lid/sleep and recovery behavior
+have not yet had a supervised hardware trial.
 
 ## Channels
 
@@ -120,15 +126,24 @@ and asks for administrator access to install a narrowly scoped sudoers rule. It 
 **your user account**, not just Insomnia, passwordless access to four
 power-setting commands. Review that permission before installing.
 
-Release zips are built for arm64 only, and their `install.sh --app` stops on
-an Intel Mac. On Intel, building from source (below) is the only option, and
-it is untested there.
+Releases built from this port use a universal executable (`x86_64` and `arm64`).
+The installer checks the verified private copy's executable architecture and
+`LSMinimumSystemVersion` before any password prompt. An arm64-only older
+release is still refused on Intel, as is a bundle requiring a newer macOS.
+Signature, identifier, version, origin opt-in and recovery checks still apply.
 
 ## Build from source
 
 Requires **Xcode with Swift 6.2 or later**. Clone the latest stable tag, or a
 nightly tag for the newest code, rather than `main`. If the releases page has
 no release yet, leave out `--branch v<version>` to build `main`:
+
+For this fork's compatibility port, use the branch and build-only instructions
+in the [README](../README.md#build-from-source) instead of the upstream clone
+below. `scripts/build-app.sh --output dist` creates a bundle without privileged
+installation. `--universal` builds both CPUs; the default builds for this host.
+Installation, a session, and a real lid-close test each require separate
+user approval. Never remove quarantine attributes or bypass Gatekeeper.
 
 ```bash
 git clone --branch v<version> --depth 1 https://github.com/krishhgg/Insomnia.git

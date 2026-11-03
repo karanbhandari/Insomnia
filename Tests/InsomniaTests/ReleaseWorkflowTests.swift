@@ -151,6 +151,7 @@ final class ReleaseWorkflowTests: XCTestCase {
         XCTAssertTrue(text.contains("ditto -c -k --sequesterRsrc --keepParent"), "zipped the way Finder expects")
         XCTAssertTrue(text.contains("CFBundleShortVersionString"), "the tag is checked against the bundle version")
         XCTAssertTrue(text.contains("scripts/build-app.sh --output"), "built with the same script as install.sh")
+        XCTAssertTrue(text.contains("scripts/build-app.sh --output dist --universal"), "releases contain Intel and Apple Silicon slices")
         XCTAssertFalse(text.contains("--allow-unsigned"), "no Gatekeeper workarounds")
     }
 
@@ -396,15 +397,13 @@ final class ReleaseWorkflowTests: XCTestCase {
         }
     }
 
-    /// Release bundles are arm64 only (no universal build), so the notes'
-    /// first line and the README's Install section say a release needs an
-    /// Apple Silicon Mac. RecoveryScriptTests checks that install.sh --app
-    /// stops on any other Mac.
-    func testTheNotesAndTheReadmeStateTheAppleSiliconRequirement() throws {
+    func testTheNotesAndTheReadmeStateTheMacOS15AndIntelSupport() throws {
         for id in ["stable", "nightly"] {
-            XCTAssertTrue(try job(id).joined(separator: "\n").contains(#"echo "Insomnia $VERSION for Apple Silicon Macs with macOS 26 or later."#), "the \(id) notes' first line")
+            XCTAssertTrue(try job(id).joined(separator: "\n").contains(#"echo "Insomnia $VERSION for Intel and Apple Silicon Macs with macOS 15 or later."#), "the \(id) notes' first line")
         }
-        XCTAssertTrue(try readmeInstallSection().contains("Apple Silicon"), "the README's Install section")
+        let install = try readmeInstallSection()
+        XCTAssertTrue(install.contains("Intel and Apple Silicon"))
+        XCTAssertTrue(install.contains("macOS 15"))
     }
 
     /// The README's Install section gives the coding agent prompt for either

@@ -21,7 +21,9 @@ by itself. Insomnia sets both to zero and restores them when the lid opens.
 Both go through private macOS frameworks. The display calls run only on a
 macOS major version they were measured on (26 and 27). The keyboard calls run only
 while the private keyboard class has the method signatures measured on 26,
-on whatever version. If either check refuses a device, Insomnia leaves it
+with Objective-C `BOOL` encoded for the native CPU (`c` on Intel, `B` on
+Apple Silicon), on whatever version. On macOS 15 the display-brightness
+calls are therefore disabled, not assumed compatible. If either check refuses a device, Insomnia leaves it
 alone and Settings says why under the toggle. A level saved before an update
 that the check now refuses stays saved for a version that can restore it, and
 the menu says to set it with the brightness keys meanwhile. That version leaves

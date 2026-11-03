@@ -16,8 +16,7 @@
 #                                             scripts/ folder (in_checkout)
 #   ./install.sh --app /path/to/Insomnia.app  installs a prebuilt bundle, such
 #                                             as the one in a release zip
-#                                             (arm64 only, so this stops on a
-#                                             Mac without Apple Silicon), after
+#                                             (native or universal), after
 #                                             checking its signature, bundle
 #                                             identifier and version. Those
 #                                             show the bundle is intact, not
@@ -58,6 +57,8 @@ CODESIGN=/usr/bin/codesign
 DITTO=/usr/bin/ditto
 CHMOD=/bin/chmod
 SYSCTL=/usr/sbin/sysctl
+LIPO=/usr/bin/lipo
+SW_VERS=/usr/bin/sw_vers
 LOCKF=/usr/bin/lockf
 MV=/bin/mv
 RM=/bin/rm
@@ -354,15 +355,8 @@ WORK="$("$MKTEMP" -d "${TMPDIR:-/tmp}/insomnia-install.XXXXXX")"
 #    changed when this step fails.
 if [[ -n "$PREBUILT" ]]; then
   step "Checking the prebuilt bundle $PREBUILT"
-  # Release bundles are built for arm64 only (the Release workflow runs on
-  # Apple Silicon). hw.optional.arm64 describes the hardware, so a shell
-  # running under Rosetta on an Apple Silicon Mac still reads 1; an Intel
-  # Mac reads 0 or has no such key.
+  # Hardware, not the shell's architecture: Rosetta must still select arm64.
   arm64="$("$SYSCTL" -n hw.optional.arm64 2>/dev/null || true)"
-  if [[ "$arm64" != 1 ]]; then
-    echo "Release bundles of Insomnia run on Apple Silicon Macs only, and this Mac is not one ('sysctl -n hw.optional.arm64' gave ${arm64:-no value}). Build and install from a source checkout instead (README, Build from source). Nothing was changed." >&2
-    exit 1
-  fi
   if [[ ! -d "$PREBUILT" || ! -f "$PREBUILT/Contents/Info.plist" ]]; then
     echo "$PREBUILT is not an app bundle (no Contents/Info.plist). Nothing was changed." >&2
     exit 1
@@ -394,6 +388,39 @@ if [[ -n "$PREBUILT" ]]; then
   PREBUILT_VERSION="$("$PLUTIL" -extract CFBundleShortVersionString raw -o - "$INFO_PLIST" 2>/dev/null || true)"
   if [[ ! "$PREBUILT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "$PREBUILT has no usable CFBundleShortVersionString ('${PREBUILT_VERSION:-<none>}'). Nothing was changed." >&2
+    exit 1
+  fi
+  executable="$("$PLUTIL" -extract CFBundleExecutable raw -o - "$INFO_PLIST" 2>/dev/null || true)"
+  if [[ "$executable" != Insomnia ]]; then
+    echo "$PREBUILT has no usable CFBundleExecutable (expected Insomnia). Nothing was changed." >&2
+    exit 1
+  fi
+  architecture=arm64
+  if [[ "$arm64" != 1 ]]; then
+    architecture="$("$SYSCTL" -n hw.machine 2>/dev/null || true)"
+  fi
+  case "$architecture" in
+    arm64|x86_64) ;;
+    *) echo "Cannot determine a supported hardware architecture ('${architecture:-no value}'). Nothing was changed." >&2; exit 1 ;;
+  esac
+  if ! "$LIPO" "$CHECKED_APP/Contents/MacOS/Insomnia" -verify_arch "$architecture"; then
+    echo "$PREBUILT does not contain a usable $architecture executable for this Mac. Build from source or choose a compatible bundle. Nothing was changed." >&2
+    exit 1
+  fi
+  minimum="$("$PLUTIL" -extract LSMinimumSystemVersion raw -o - "$INFO_PLIST" 2>/dev/null || true)"
+  current="$("$SW_VERS" -productVersion 2>/dev/null || true)"
+  for version in "$minimum" "$current"; do
+    if [[ ! "$version" =~ ^[0-9]{1,3}\.[0-9]{1,3}(\.[0-9]{1,3})?$ ]]; then
+      echo "Cannot check macOS compatibility (bundle minimum '${minimum:-missing}', current '${current:-unreadable}'). Nothing was changed." >&2
+      exit 1
+    fi
+  done
+  IFS=. read -r min_major min_minor min_patch <<< "$minimum"
+  IFS=. read -r os_major os_minor os_patch <<< "$current"
+  min_number=$(( 10#$min_major * 1000000 + 10#$min_minor * 1000 + 10#${min_patch:-0} ))
+  os_number=$(( 10#$os_major * 1000000 + 10#$os_minor * 1000 + 10#${os_patch:-0} ))
+  if (( os_number < min_number )); then
+    echo "$PREBUILT requires macOS $minimum or later; this Mac runs $current. Nothing was changed." >&2
     exit 1
   fi
   if [[ ! -f "$CHECKED_APP/Contents/Resources/backstop.sh" ]]; then

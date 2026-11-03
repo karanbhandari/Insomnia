@@ -3,7 +3,7 @@
 # source installs, and .github/workflows/release.yml runs it for the
 # downloadable package, so both produce the same bundle.
 #
-# Usage: scripts/build-app.sh --output DIR
+# Usage: scripts/build-app.sh --output DIR [--universal]
 #   Writes DIR/Insomnia.app, replacing a bundle already at that path. DIR is
 #   created if needed. Prints the bundle path last.
 #
@@ -26,11 +26,13 @@ CHMOD=/bin/chmod
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-usage() { echo "usage: $0 --output DIR" >&2; }
+usage() { echo "usage: $0 --output DIR [--universal]" >&2; }
 OUTPUT=""
+UNIVERSAL=0
 while (( $# )); do
   case "$1" in
     --output) [[ $# -ge 2 ]] || { usage; exit 2; }; OUTPUT="$2"; shift 2 ;;
+    --universal) UNIVERSAL=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage; exit 2 ;;
   esac
@@ -79,6 +81,9 @@ cd "$ROOT"
 # file. Such a build says so in the log at launch, in the status menu and in
 # Settings. The release workflow never sets it.
 BUILD_FLAGS=()
+if (( UNIVERSAL )); then
+  BUILD_FLAGS+=(--arch x86_64 --arch arm64)
+fi
 if [[ "${INSOMNIA_LID_SIMULATION:-}" == 1 ]]; then
   BUILD_FLAGS+=(-Xswiftc -DINSOMNIA_LID_SIMULATION)
   echo "lid simulation compiled in (INSOMNIA_LID_SIMULATION=1): scripts/simulate-lid.sh will drive the lid actions during sessions"

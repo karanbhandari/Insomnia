@@ -5,6 +5,83 @@ behind the safety fixes. It is not a certification that unattended or
 lid-closed use is safe. The checks to run before the next release are in
 [Releasing](releasing.md#real-mac-checks-before-a-release).
 
+## Intel/macOS 15 compatibility port (local, build-only)
+
+Host: MacBookPro16,1, 6-core Intel Core i7, macOS 15.8.2 (24H230),
+x86_64. Toolchain: the already installed Xcode Swift 6.2.4 and macOS 26.2
+SDK; no toolchain or system configuration changes were needed.
+This is a fork compatibility build, not a new upstream release.
+
+The following selected regression run passed **463 tests, zero failures,
+zero skips**. It covers guarded display/keyboard calls, power parsing and
+lifecycle behavior with injected controls, native process identity and
+disposable child processes, offscreen SwiftUI rendering, packaging and
+release-workflow contracts, and isolated recovery/installer fixtures.
+Installer and uninstaller tests use patched private copies, fake privileged
+tools, temporary homes and temporary journals, not the host's installation.
+
+```bash
+swift test --arch x86_64 --filter 'PrivateDisplayGuardTests|RefusedDarkeningTests|OwedKeptClearQuitTests|PowerMonitorTests|PmsetParsingTests|ProcessIdentityTests|UIStartupTests|UIStatusTests|TestIsolationTests|PackagingTests|ReleaseWorkflowTests|RecoveryScriptTests.testInstallFrom|RecoveryScriptTests.testSpawnUses|RecoveryScriptTests.testPlistReaders|RecoveryScriptTests.testScriptsAndAppReadTheSameSessionDates|RecoveryScriptTests.testExpiredSession|RecoveryScriptTests.testMalformedJournal|RecoveryScriptTests.testMalformedKept|RecoveryScriptTests.testUninstallRejectsMalformedKept|LidObserverTests|LidActionsTests|FloorRulesTests|SleepGuardReadBackTests|ReconcileTests|ProcessExitTests|ResumeFrozenCommandTests|PrivilegedCommandLockTests'
+```
+
+Both release architectures also compiled successfully with warnings as errors:
+
+```bash
+swift build --scratch-path .build/universal-validation -c release --arch x86_64 --arch arm64 -Xswiftc -warnings-as-errors
+```
+
+The real build-only packaging commands passed:
+
+```bash
+scripts/build-app.sh --output .build/compatibility-universal --universal
+scripts/build-app.sh --output "$HOME/Applications/Insomnia-Intel-macOS15"
+```
+
+`lipo -archs` confirmed both slices in the universal bundle and only x86_64
+in the persistent native bundle. `xcrun vtool -show-build` reported minimum
+macOS 15.0 and SDK 26.2 for every slice; `plutil` confirmed the matching
+bundle minimum. `codesign --verify --strict --deep` passed for both
+bundles, with ad-hoc signatures, identifier `com.kgarg.insomnia`, and no
+TeamIdentifier or notarization. Both sealed `backstop.sh` resources matched
+the current source byte for byte.
+
+The persistent native executable loaded successfully in its safe one-shot
+mode, `Insomnia --resume-frozen invalid </dev/null`, printing `usage` and
+returning the expected status 64 before AppKit, journal access or any process
+signaling. This does not test a normal GUI launch or a privileged session.
+
+Read-only Objective-C metadata inspection on this Intel Mac found the native
+keyboard `BOOL` encoding `c`, not arm64's `B`; the selectors' other types
+match the previously measured signatures below. No keyboard brightness
+method was invoked for that inspection. Exact signatures, absent methods,
+wrong-architecture encodings and macOS 15 DisplayServices refusal are covered
+by the tests. DisplayServices stays restricted to measured macOS 26/27.
+Keyboard writes and physical backlight behavior remain unvalidated here.
+
+The port also fixes a real macOS 15 recovery-reader incompatibility:
+unsuccessful `plutil` extraction/type queries print diagnostics on stdout.
+Those are now discarded based on exit status rather than treated as values,
+preventing an empty frozen-process array from causing an endless scan.
+Successful scalar extraction preserves trailing newlines so strict session
+date validation still rejects malformed dates. The regression fixtures
+also account for macOS 15 rejecting JSON5-like syntax before the later
+journal-shape checks, retaining all refusal and evidence-preservation checks.
+The test spawn fixture uses the older supported working-directory API on
+macOS 15, and offscreen UI captures flush hosting layout synchronously.
+
+Shell syntax (`/bin/bash -n` for every `scripts/*.sh`), release YAML parsing
+(`ruby -e 'require "yaml"; YAML.load_file(".github/workflows/release.yml")'`),
+and `git diff --check` passed. ShellCheck was not available and was not
+installed. This is not a full-suite or hosted-CI result: Keychain integration
+tests and live Docker, hotspot, browser, tmux, thermal/battery, and login
+integration checks were not run as part of this compatibility validation.
+
+No privileged installation or uninstallation, sudoers/recovery/login-agent
+write, power-setting change, Keychain/network modification, or Gatekeeper
+bypass was performed. No normal app session or physical lid/sleep trial
+was started. Those checks require separate, supervised user approval;
+these results do not establish that unattended Intel lid-closed use is safe.
+
 ## v0.1.0
 
 The maintainer ran these checks on a MacBook with an Apple M5 (Mac17,2) and

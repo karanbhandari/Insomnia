@@ -2624,13 +2624,16 @@ final class RecoveryScriptTests: XCTestCase {
             try f.writeSession(endsAt: Date(timeIntervalSinceNow: -60))
             try f.writeState(json)
 
+            let plistReadsIt = try f.runTool("/usr/bin/plutil", ["-convert", "json", "-o", "/dev/null", f.state.path]).status == 0
             let r = try f.run(f.backstop)
 
             XCTAssertNotEqual(r.status, 0, json)
             XCTAssertEqual(f.calls(), [], "no privileged command for \(json)")
             XCTAssertEqual(try String(contentsOf: f.state, encoding: .utf8), json, "evidence kept for \(json)")
             XCTAssertTrue(f.exists(f.session), json)
-            XCTAssertTrue(f.log().contains("\(f.state.path): \(problem)"), "\(json): \(f.log())")
+            // macOS 15 rejects JSON5 at conversion; newer plutil reaches the shape check.
+            let expected = plistReadsIt ? problem : "not valid JSON"
+            XCTAssertTrue(f.log().contains("\(f.state.path): \(expected)"), "\(json): \(f.log())")
             XCTAssertTrue(f.log().contains("is unreadable or malformed; nothing undone, evidence kept"), f.log())
         }
     }
@@ -2694,6 +2697,7 @@ final class RecoveryScriptTests: XCTestCase {
             try TestScripts.write("#!/bin/bash\nexit 0\n", to: f.backstop, executable: false)
             try f.writeState(json)
 
+            let plistReadsIt = try f.runTool("/usr/bin/plutil", ["-convert", "json", "-o", "/dev/null", f.state.path]).status == 0
             let r = try f.run(f.uninstall, ["--purge"])
 
             XCTAssertNotEqual(r.status, 0, json)
@@ -2701,8 +2705,12 @@ final class RecoveryScriptTests: XCTestCase {
             XCTAssertTrue(f.exists(f.sudoers), json)
             XCTAssertTrue(f.exists(f.app), json)
             XCTAssertEqual(try String(contentsOf: f.state, encoding: .utf8), json)
-            XCTAssertTrue(r.stderr.contains("state.json is malformed (unexpected shape)"), "\(json): \(r.stderr)")
-            XCTAssertTrue(r.stderr.contains(problem), "\(json): \(r.stderr)")
+            if plistReadsIt {
+                XCTAssertTrue(r.stderr.contains("state.json is malformed (unexpected shape)"), "\(json): \(r.stderr)")
+                XCTAssertTrue(r.stderr.contains(problem), "\(json): \(r.stderr)")
+            } else {
+                XCTAssertTrue(r.stderr.contains("state.json is unreadable or malformed"), "\(json): \(r.stderr)")
+            }
             XCTAssertThrowsError(try Store.makeDecoder().decode(RuntimeState.self, from: Data(json.utf8)), "the app refuses \(json)")
         }
     }
@@ -4595,27 +4603,68 @@ final class RecoveryScriptTests: XCTestCase {
         }
     }
 
-    /// Release bundles are arm64 only. On a Mac whose hardware is not Apple
-    /// Silicon (sysctl reads 0, or has no hw.optional.arm64), install.sh
-    /// --app refuses before it copies or checks the bundle, and names the
-    /// source build. A source build on the same Mac does not ask.
-    func testInstallFromPrebuiltAppRefusesOnAMacThatIsNotAppleSilicon() throws {
+    func testPlistReadersIgnoreFailedCommandsStdoutOnMacOS15() throws {
+        let json = fx.root.appendingPathComponent("reader.json")
+        try #"{"entries":[],"value":"hello"}"#.write(to: json, atomically: true, encoding: .utf8)
+        let failed = fx.root.appendingPathComponent("failed-plutil")
+        try TestScripts.write("#!/bin/bash\nprintf 'could not extract value\\n'\nexit 1\n", to: failed)
+        for script in [fx.backstop, fx.uninstall] {
+            let text = try String(contentsOf: script, encoding: .utf8)
+            var functions = ""
+            for name in ["extract", "extract_json", "type_of"] {
+                let start = try XCTUnwrap(text.range(of: "\n\(name)() {"))
+                let end = try XCTUnwrap(text.range(of: "\n}\n", range: start.upperBound..<text.endIndex))
+                functions += text[start.lowerBound..<end.upperBound]
+            }
+            let harness = fx.root.appendingPathComponent("readers.\(script.lastPathComponent)")
+            try ("set -euo pipefail\nPLUTIL=\"$1\"\n" + functions + """
+            for reader in extract extract_json type_of; do
+              value="$("$reader" "$2" entries.0 || true)"
+              [[ -z "$value" ]] || { printf 'unexpected output: %s\\n' "$value" >&2; exit 1; }
+            done
+
+            """).write(to: harness, atomically: true, encoding: .utf8)
+            for tool in ["/usr/bin/plutil", failed.path] {
+                let result = try fx.run(harness, [tool, json.path])
+                XCTAssertEqual(result.status, 0, "\(script.lastPathComponent): \(result.stderr)")
+                XCTAssertEqual(result.stdout, "")
+            }
+        }
+    }
+
+    func testSpawnUsesTheFixturesWorkingDirectoryOnSupportedMacOS() throws {
+        let script = fx.root.appendingPathComponent("check-cwd.sh")
+        try TestScripts.write("pwd -P > spawned-cwd\n", to: script)
+        let child = try fx.spawn(script)
+        XCTAssertEqual(child.wait(), 0)
+        let cwd = try String(contentsOf: fx.root.appendingPathComponent("spawned-cwd"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(URL(fileURLWithPath: cwd).standardizedFileURL, fx.root.standardizedFileURL)
+    }
+
+    func testInstallFromPrebuiltAppAcceptsIntelAndChecksTheActualExecutable() throws {
         try fx.prepareInstall()
         let prebuilt = try fx.writePrebuiltApp()
         fx.setMode("launchctl", "loaded")
-        for (mode, read) in [("intel-0", "0"), ("intel-missing", "no value")] {
+        for mode in ["intel-0", "intel-missing"] {
             fx.clearCalls()
             fx.setMode("sysctl", mode)
+            fx.setMode("lipo", "arm64-only")
 
             let r = try fx.run(fx.installRedirected, ["--allow-unverified-origin", "--app", prebuilt.path], extraEnvironment: ["USER": "tester"])
 
             XCTAssertEqual(r.status, 1, "\(mode): " + r.stderr + r.stdout)
-            XCTAssertEqual(fx.callsBesideScratchFiles(), ["sysctl -n hw.optional.arm64"], "\(mode): nothing else ran: \(fx.calls())")
-            XCTAssertTrue(r.stderr.contains("Release bundles of Insomnia run on Apple Silicon Macs only, and this Mac is not one ('sysctl -n hw.optional.arm64' gave \(read))."), r.stderr)
-            XCTAssertTrue(r.stderr.contains("Build and install from a source checkout instead (README, Build from source). Nothing was changed."), r.stderr)
+            XCTAssertTrue(r.stderr.contains("does not contain a usable x86_64 executable"), r.stderr)
+            XCTAssertFalse(fx.calls().contains { $0.hasPrefix("sudo") || $0.hasPrefix("launchctl") })
             XCTAssertFalse(fx.exists(fx.sudoers))
             XCTAssertFalse(fx.exists(fx.app))
         }
+
+        fx.setMode("lipo", "ok")
+        let compatible = try fx.run(fx.installRedirected, ["--allow-unverified-origin", "--app", prebuilt.path], extraEnvironment: ["USER": "tester"])
+        XCTAssertEqual(compatible.status, 0, compatible.stderr + compatible.stdout)
+        let checks = try String(contentsOf: fx.root.appendingPathComponent("compatibility.calls"), encoding: .utf8)
+        XCTAssertTrue(checks.contains("-verify_arch x86_64"), checks)
 
         fx.clearCalls()
         let built = try fx.run(fx.installRedirected, extraEnvironment: ["USER": "tester"])
@@ -4623,6 +4672,48 @@ final class RecoveryScriptTests: XCTestCase {
         XCTAssertEqual(built.status, 0, built.stderr + built.stdout)
         XCTAssertFalse(fx.calls().contains { $0.hasPrefix("sysctl") }, "a source build fits the Mac it is built on: \(fx.calls())")
         XCTAssertTrue(fx.exists(fx.app))
+    }
+
+    func testInstallFromPrebuiltChecksMacOSVersionBeforeAnyPrivilegedAction() throws {
+        try fx.prepareInstall()
+        fx.setMode("launchctl", "loaded")
+        for (minimum, message) in [
+            ("26.0", "requires macOS 26.0 or later; this Mac runs 15.8.2"),
+            ("15.9", "requires macOS 15.9 or later"),
+            ("15.8.3", "requires macOS 15.8.3 or later"),
+            ("", "Cannot check macOS compatibility"),
+            ("15.bad", "Cannot check macOS compatibility"),
+        ] {
+            let prebuilt = try fx.writePrebuiltApp(minimumOS: minimum)
+            fx.clearCalls()
+            let r = try fx.run(fx.installRedirected, ["--allow-unverified-origin", "--app", prebuilt.path], extraEnvironment: ["USER": "tester"])
+            XCTAssertEqual(r.status, 1, r.stderr)
+            XCTAssertTrue(r.stderr.contains(message), r.stderr)
+            XCTAssertFalse(fx.calls().contains { $0.hasPrefix("sudo") || $0.hasPrefix("launchctl") })
+            XCTAssertFalse(fx.exists(fx.app))
+            XCTAssertFalse(fx.exists(fx.sudoers))
+            try FileManager.default.removeItem(at: prebuilt)
+        }
+        for minimum in ["15.0", "15.8", "15.8.2"] {
+            let prebuilt = try fx.writePrebuiltApp(minimumOS: minimum)
+            let r = try fx.run(fx.installRedirected, ["--allow-unverified-origin", "--app", prebuilt.path], extraEnvironment: ["USER": "tester"])
+            XCTAssertEqual(r.status, 0, r.stderr + r.stdout)
+            try FileManager.default.removeItem(at: prebuilt)
+        }
+    }
+
+    func testInstallFromPrebuiltUsesAppleSiliconHardwareEvenUnderRosetta() throws {
+        try fx.prepareInstall()
+        fx.setMode("launchctl", "loaded")
+        let prebuilt = try fx.writePrebuiltApp()
+        fx.setMode("lipo", "intel-only")
+        let refused = try fx.run(fx.installRedirected, ["--allow-unverified-origin", "--app", prebuilt.path], extraEnvironment: ["USER": "tester"])
+        XCTAssertEqual(refused.status, 1, refused.stderr)
+        XCTAssertTrue(refused.stderr.contains("does not contain a usable arm64 executable"), refused.stderr)
+        XCTAssertFalse(fx.exists(fx.sudoers))
+        fx.setMode("lipo", "arm64-only")
+        let accepted = try fx.run(fx.installRedirected, ["--allow-unverified-origin", "--app", prebuilt.path], extraEnvironment: ["USER": "tester"])
+        XCTAssertEqual(accepted.status, 0, accepted.stderr + accepted.stdout)
     }
 
     /// Integrity is not origin: a bundle that passes every check on it could
@@ -6833,6 +6924,8 @@ private final class ScriptFixture {
             "SUDO": bin.appendingPathComponent("sudo").path,
             "CODESIGN": bin.appendingPathComponent("codesign").path,
             "SYSCTL": bin.appendingPathComponent("sysctl").path,
+            "LIPO": bin.appendingPathComponent("lipo").path,
+            "SW_VERS": bin.appendingPathComponent("sw_vers").path,
             "MV": bin.appendingPathComponent("mv").path,
             "RM": bin.appendingPathComponent("rm").path,
             "RMDIR": bin.appendingPathComponent("rmdir").path,
@@ -6856,7 +6949,7 @@ private final class ScriptFixture {
     /// backstop (the fixture's patched copy, so install.sh's recovery step
     /// acts on the fixture). What the fake codesign says about its signature
     /// is set with `setMode("codesign", ...)` and `setSigning(...)`.
-    func writePrebuiltApp(bundleID: String = "com.kgarg.insomnia", version: String = "0.1.0", withBackstop: Bool = true, machO: Bool = false) throws -> URL {
+    func writePrebuiltApp(bundleID: String = "com.kgarg.insomnia", version: String = "0.1.0", withBackstop: Bool = true, machO: Bool = false, minimumOS: String = "15.0") throws -> URL {
         let app = root.appendingPathComponent("dist/Insomnia.app", isDirectory: true)
         try fm.createDirectory(at: app.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
         try fm.createDirectory(at: app.appendingPathComponent("Contents/Resources"), withIntermediateDirectories: true)
@@ -6868,6 +6961,7 @@ private final class ScriptFixture {
         <key>CFBundleIdentifier</key><string>\(bundleID)</string>
         <key>CFBundlePackageType</key><string>APPL</string>
         <key>CFBundleShortVersionString</key><string>\(version)</string>
+        <key>LSMinimumSystemVersion</key><string>\(minimumOS)</string>
         </dict></plist>
         """.write(to: app.appendingPathComponent("Contents/Info.plist"), atomically: true, encoding: .utf8)
         if machO {
@@ -7179,6 +7273,7 @@ private final class ScriptFixture {
         // reads 0; "intel-missing" fails the way sysctl does for a key the
         // Mac lacks.
         try writeFake("sysctl", """
+        if [[ "$*" == "-n hw.machine" ]]; then echo x86_64; exit 0; fi
         if [[ "$*" == "-n hw.optional.arm64" ]]; then
           printf 'sysctl %s\\n' "$*" >> "\(calls)"
           case "$(cat "\(r)/sysctl.mode" 2>/dev/null || echo ok)" in
@@ -7189,6 +7284,18 @@ private final class ScriptFixture {
           exit 0
         fi
         cat "\(r)/boot.uuid"
+        """)
+        try writeFake("lipo", """
+        printf 'lipo %s\\n' "$*" >> "\(r)/compatibility.calls"
+        case "$(cat "\(r)/lipo.mode" 2>/dev/null || echo ok)" in
+          arm64-only) [[ "$3" == arm64 ]] ;;
+          intel-only) [[ "$3" == x86_64 ]] ;;
+          ok) exit 0 ;;
+          *) exit 1 ;;
+        esac
+        """)
+        try writeFake("sw_vers", """
+        echo 15.8.2
         """)
         // chmod: recorded in chmod.calls, apart from calls.log, then run for
         // real so the modes still change. A path listed in chmod.fail fails
@@ -7924,7 +8031,13 @@ private final class ScriptFixture {
         posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
         posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0)
         posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0)
-        posix_spawn_file_actions_addchdir(&actions, root.path)
+        let chdirStatus: Int32
+        if #available(macOS 26, *) {
+            chdirStatus = posix_spawn_file_actions_addchdir(&actions, root.path)
+        } else {
+            chdirStatus = posix_spawn_file_actions_addchdir_np(&actions, root.path)
+        }
+        guard chdirStatus == 0 else { throw FixtureError("posix_spawn chdir failed: \(chdirStatus)") }
 
         var attr: posix_spawnattr_t?
         posix_spawnattr_init(&attr)

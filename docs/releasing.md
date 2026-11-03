@@ -36,11 +36,13 @@ zip's SHA-256. Both files are attached to the GitHub Release, and the zip
 carries a GitHub build provenance attestation that names the repository, the
 ref, the commit and the workflow run that produced it.
 
-The binary is arm64 only, because the build job runs on an Apple Silicon
-runner and no universal build is made. A release therefore runs on Apple
-Silicon Macs only: the release notes and the README say so, and
-`install.sh --app` stops on a Mac where `sysctl -n hw.optional.arm64` does not
-read 1.
+The workflow builds a universal binary with `scripts/build-app.sh --output dist
+--universal`: `x86_64` and `arm64`, with a macOS 15 minimum. The default local
+build remains native. `install.sh --app` verifies that the private, signed copy
+contains the hardware's native architecture and supports the running macOS
+before asking for administrator access. Apple Silicon is detected by
+`hw.optional.arm64`, including under Rosetta. Older published bundles are
+unchanged and may still require arm64/macOS 26.
 
 The bundle is the one `scripts/build-app.sh` makes: the release binary,
 `Resources/Info.plist`, the icon, and `backstop.sh` sealed under
@@ -314,7 +316,8 @@ below cover what only a real Mac shows.
 - Installed bundle from a release zip has no group or other write bit and no ACL (`ls -leR ~/Applications/Insomnia.app`), keeps its quarantine flag (`xattr -p com.apple.quarantine`) and passes `codesign --verify --strict --deep`, on a working Mac
 - `uninstall.sh` run from a release zip unpacked in `/tmp` runs the installed app's sealed `backstop.sh` after `codesign --verify`, on a working Mac
 - `install.sh` and `uninstall.sh` from a release zip unpacked in `/tmp`, with a `build-app.sh` and a `backstop.sh` added to the unpacked folder, run neither (install without `--app` stops, uninstall runs the sealed copy), on a working Mac
-- `install.sh --app` from a release zip stops with the Apple Silicon message on an Intel Mac, and installs on an Apple Silicon Mac from a Terminal running under Rosetta
+- A universal bundle contains both CPU slices with a macOS 15 minimum; `install.sh --app` accepts the matching slice on Intel/macOS 15 and Apple Silicon (also from a Terminal under Rosetta), and refuses a missing slice or a newer minimum OS before sudo
+- On Intel/macOS 15, supervise a separately approved session, lid close/open, battery/thermal floors, and recovery after interruption; confirm the display-brightness refusal in Settings and that no display brightness is journaled or written. Do not equate mocked tests or a successful launch with validated lid/sleep behavior
 - Install or uninstall whose own process is killed (`kill -9 <pid>`) during a `launchctl bootout` keeps the recovery lock until that bootout has ended or been stopped, about 33 s at most, and the app started afterwards keeps its agent loaded, on a working Mac
 - The installed recovery agent on the supported macOS release: launchd bootstraps its plist, loads it at login and runs its verify-then-exec command line, and the agent recovers a session after the app crashes
 - The installed agent's plist is the one install.sh wrote

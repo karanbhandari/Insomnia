@@ -16,6 +16,14 @@ final class PackagingTests: XCTestCase {
     }
     private var resources: URL { Self.repoRoot.appendingPathComponent("Resources", isDirectory: true) }
 
+    func testBundleAndPackageUseTheSameMacOS15Minimum() throws {
+        let data = try Data(contentsOf: resources.appendingPathComponent("Info.plist"))
+        let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        XCTAssertEqual(plist["LSMinimumSystemVersion"] as? String, "15.0")
+        let manifest = try String(contentsOf: Self.repoRoot.appendingPathComponent("Package.swift"), encoding: .utf8)
+        XCTAssertTrue(manifest.contains(".macOS(.v15)"))
+    }
+
     func testInfoPlistNamesAnIconThatResolvesToAnIcnsInResources() throws {
         let data = try Data(contentsOf: resources.appendingPathComponent("Info.plist"))
         let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
@@ -409,6 +417,19 @@ final class PackagingTests: XCTestCase {
 
         XCTAssertEqual(r.status, 0, r.output)
         XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path), "the previous bundle is replaced, not merged")
+    }
+
+    func testUniversalBuildUsesBothArchitecturesForTheBuildAndBinaryPath() throws {
+        let (script, calls) = try patchedBuildApp(recordingCodesign: true)
+        let out = scratch.appendingPathComponent("universal")
+        let r = try run("/bin/bash", [script.path, "--output", out.path, "--universal"],
+                        environment: ["PATH": "/usr/bin:/bin", "HOME": scratch.path])
+        XCTAssertEqual(r.status, 0, r.output)
+        let builds = try String(contentsOf: calls, encoding: .utf8).components(separatedBy: "\n").filter { $0.hasPrefix("swift build") }
+        XCTAssertEqual(builds, [
+            "swift build -c release --arch x86_64 --arch arm64",
+            "swift build -c release --arch x86_64 --arch arm64 --show-bin-path",
+        ])
     }
 
     /// `--output` is resolved before the build changes into the checkout, so

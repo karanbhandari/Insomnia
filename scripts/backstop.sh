@@ -296,15 +296,23 @@ fi
 
 # plutil -extract <key> raw prints the scalar; returns non-zero if missing.
 extract() { # file keypath
-  "$PLUTIL" -extract "$2" raw -o - "$1" 2>/dev/null
+  local value
+  # The sentinel preserves stored trailing newlines for the strict date reader.
+  value="$("$PLUTIL" -extract "$2" raw -o - "$1" 2>/dev/null && printf .)" || return 1
+  printf '%s' "${value%.}"
 }
 extract_json() { # file keypath
-  "$PLUTIL" -extract "$2" json -o - "$1" 2>/dev/null
+  local value
+  value="$("$PLUTIL" -extract "$2" json -o - "$1" 2>/dev/null && printf .)" || return 1
+  printf '%s' "${value%.}"
 }
 # Type name of a keypath (bool, integer, float, string, array, dictionary,
 # "(any)" for null); empty if the key is absent.
 type_of() { # file keypath
-  "$PLUTIL" -type "$2" -o - "$1" 2>/dev/null || true
+  local value
+  # macOS 15 plutil prints missing-key diagnostics to stdout.
+  value="$("$PLUTIL" -type "$2" -o - "$1" 2>/dev/null)" || return 0
+  printf '%s\n' "$value"
 }
 is_true() { # file key
   [[ "$(extract "$1" "$2" || true)" == "true" ]]

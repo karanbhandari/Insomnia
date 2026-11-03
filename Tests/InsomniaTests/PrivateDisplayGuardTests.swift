@@ -7,6 +7,12 @@ import XCTest
 private let measuredMajorsText = "measured on macOS \(DisplayPower.measuredDisplayServicesMajors.sorted().map(String.init).joined(separator: ", ")) only"
 private let unmeasuredMajor = (DisplayPower.measuredDisplayServicesMajors.max() ?? 0) + 1
 
+#if arch(x86_64)
+private let boolEncoding = "c"
+#else
+private let boolEncoding = "B"
+#endif
+
 // Fake KeyboardBrightnessClient classes. They carry the private class's
 // selectors, and the Objective-C runtime reports their type encodings the
 // same way it reports the real ones, so the guard is exercised for real
@@ -64,8 +70,12 @@ struct BrightnessOnlyDimmer: DisplayDimming {
 final class PrivateDisplayGuardTests: XCTestCase {
     private var home: TempHome!
 
-    /// Raw encodings measured on macOS 26.2 (25C56), see docs/release-validation.md.
-    private let measured: [String: String] = [
+    /// Measured signatures, with BOOL expressed in the test host's ABI.
+    private var measured: [String: String] {
+        rawMeasured.mapValues { $0.replacingOccurrences(of: "B", with: boolEncoding) }
+    }
+
+    private let rawMeasured: [String: String] = [
         "copyKeyboardBacklightIDs": "@16@0:8",
         "isKeyboardBuiltIn:": "B24@0:8Q16",
         "brightnessForKeyboard:": "f24@0:8Q16",
@@ -76,6 +86,13 @@ final class PrivateDisplayGuardTests: XCTestCase {
 
     override func setUp() async throws {
         home = TempHome()
+    }
+
+    func testMacOS15KeepsTheUnmeasuredDisplayCallsDisabled() {
+        let display = DisplayServicesDimmer(osMajorVersion: 15)
+        XCTAssertTrue(display.refusal()?.contains("this is macOS 15") == true)
+        XCTAssertThrowsError(try display.readBrightness())
+        XCTAssertThrowsError(try display.setBrightness(0))
     }
 
     override func tearDown() async throws {
@@ -139,15 +156,15 @@ final class PrivateDisplayGuardTests: XCTestCase {
 
     func testAChangedEncodingRefusesEvenOnAnOptionalSelector() throws {
         var table = measured
-        table["isBacklightDimmedOnKeyboard:"] = "B24@0:8i16"
+        table["isBacklightDimmedOnKeyboard:"] = "\(boolEncoding)24@0:8i16"
         let why = try XCTUnwrap(DisplayPower.keyboardClientRefusal { table[$0] })
-        XCTAssertTrue(why.contains("isBacklightDimmedOnKeyboard: has type encoding B@:i, measured B@:Q"), why)
+        XCTAssertTrue(why.contains("isBacklightDimmedOnKeyboard: has type encoding \(boolEncoding)@:i, measured \(boolEncoding)@:Q"), why)
     }
 
     /// Stack offsets are layout, not signature.
     func testChangedOffsetsAloneAreNotAChange() {
         var table = measured
-        table["isKeyboardBuiltIn:"] = "B32@0:16Q24"
+        table["isKeyboardBuiltIn:"] = "\(boolEncoding)32@0:16Q24"
         XCTAssertNil(DisplayPower.keyboardClientRefusal { table[$0] })
     }
 
@@ -168,7 +185,7 @@ final class PrivateDisplayGuardTests: XCTestCase {
 
         let why = try XCTUnwrap(backlight.refusal())
 
-        XCTAssertTrue(why.contains("isKeyboardBuiltIn: has type encoding B@:i, measured B@:Q on macOS 26"), why)
+        XCTAssertTrue(why.contains("isKeyboardBuiltIn: has type encoding \(boolEncoding)@:i, measured \(boolEncoding)@:Q on macOS 26"), why)
         XCTAssertThrowsError(try backlight.readBrightness()) { XCTAssertEqual($0.localizedDescription, why) }
         XCTAssertThrowsError(try backlight.setBrightness(0)) { XCTAssertEqual($0.localizedDescription, why) }
         XCTAssertFalse(backlight.isSuppressedOrDimmed())
@@ -182,6 +199,13 @@ final class PrivateDisplayGuardTests: XCTestCase {
 
         XCTAssertTrue(why.contains("has no setBrightness:forKeyboard:"), why)
         XCTAssertThrowsError(try backlight.readBrightness())
+    }
+
+    func testTheOtherArchitecturesBoolEncodingIsRefused() {
+        var table = measured
+        let otherBool = boolEncoding == "c" ? "B" : "c"
+        table["isKeyboardBuiltIn:"] = "\(otherBool)24@0:8Q16"
+        XCTAssertNotNil(DisplayPower.keyboardClientRefusal { table[$0] })
     }
 
     func testAFrameworkThatCannotBeLoadedIsTheRefusal() {
@@ -365,7 +389,7 @@ final class RefusedDarkeningTests: XCTestCase {
         let error = try XCTUnwrap(m.lastError)
         XCTAssertTrue(error.hasPrefix("could not restore the brightness saved before the lid closed on this macOS build. "), error)
         XCTAssertTrue(error.contains("Display brightness 0.8: DisplayServices brightness calls were \(measuredMajorsText); this is macOS \(unmeasuredMajor)"), error)
-        XCTAssertTrue(error.contains("Keyboard backlight 0.3: KeyboardBrightnessClient isKeyboardBuiltIn: has type encoding B@:i"), error)
+        XCTAssertTrue(error.contains("Keyboard backlight 0.3: KeyboardBrightnessClient isKeyboardBuiltIn: has type encoding \(boolEncoding)@:i"), error)
         XCTAssertTrue(error.contains("Set the levels with the brightness keys or Control Center"), error)
         XCTAssertTrue(error.contains("the saved values stay in the journal"), error)
         XCTAssertTrue(logText().contains(error), logText())
@@ -2990,7 +3014,7 @@ final class RefusedDarkeningTests: XCTestCase {
 
         XCTAssertEqual(notes.count, 2, "\(notes)")
         XCTAssertTrue(notes.first?.hasPrefix("Display: DisplayServices brightness calls were \(measuredMajorsText); this is macOS \(unmeasuredMajor)") == true, "\(notes)")
-        XCTAssertTrue(notes.last?.hasPrefix("Keyboard backlight: KeyboardBrightnessClient isKeyboardBuiltIn: has type encoding B@:i") == true, "\(notes)")
+        XCTAssertTrue(notes.last?.hasPrefix("Keyboard backlight: KeyboardBrightnessClient isKeyboardBuiltIn: has type encoding \(boolEncoding)@:i") == true, "\(notes)")
         XCTAssertEqual(h.makeManager().darkenRefusals, [], "the harness fakes refuse nothing")
     }
 

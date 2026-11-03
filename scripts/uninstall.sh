@@ -226,13 +226,21 @@ case "$APP_SUPPORT" in /*) ;; *) echo "refusing: app support path is not absolut
 [[ "$(basename "$APP")" == "Insomnia.app" ]] || { echo "refusing: $APP is not an Insomnia.app bundle path" >&2; exit 1; }
 
 extract() { # file keypath (raw scalar; non-zero if missing)
-  "$PLUTIL" -extract "$2" raw -o - "$1" 2>/dev/null
+  local value
+  # The sentinel preserves stored trailing newlines for the strict date reader.
+  value="$("$PLUTIL" -extract "$2" raw -o - "$1" 2>/dev/null && printf .)" || return 1
+  printf '%s' "${value%.}"
 }
 extract_json() { # file keypath
-  "$PLUTIL" -extract "$2" json -o - "$1" 2>/dev/null
+  local value
+  value="$("$PLUTIL" -extract "$2" json -o - "$1" 2>/dev/null && printf .)" || return 1
+  printf '%s' "${value%.}"
 }
 type_of() { # file keypath -> bool|integer|float|string|array|dictionary|(any); empty if absent
-  "$PLUTIL" -type "$2" -o - "$1" 2>/dev/null || true
+  local value
+  # macOS 15 plutil prints missing-key diagnostics to stdout.
+  value="$("$PLUTIL" -type "$2" -o - "$1" 2>/dev/null)" || return 0
+  printf '%s\n' "$value"
 }
 
 # Prints one line per way the app's records about a kept display entry would

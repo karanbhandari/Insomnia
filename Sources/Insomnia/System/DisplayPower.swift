@@ -95,18 +95,24 @@ enum DisplayPower {
         return "DisplayServices brightness calls were measured on macOS \(measured) only; this is macOS \(major), so the display is left alone until they are measured again"
     }
 
-    /// Instance method type encodings of the private KeyboardBrightnessClient
-    /// measured on macOS 26.2 (25C56, arm64), with the stack offsets
-    /// removed: the offsets depend on layout, the types do not. An Objective-C
-    /// method carries its encoding at run time, so a changed argument or
-    /// return type is seen before the method is called.
+    // Objective-C BOOL is a signed char on Intel macOS, a bool on arm64.
+    // Require the encoding our bridge calls with, not the other ABI's.
+    #if arch(x86_64)
+    static let keyboardBoolEncoding = "c"
+    #else
+    static let keyboardBoolEncoding = "B"
+    #endif
+
+    /// Signatures measured on macOS 26.2 (25C56, arm64) and macOS 15.8.2
+    /// (24H230, x86_64), with offsets removed and native BOOL encodings.
+    /// Every other type must still match exactly before any private call.
     static let measuredKeyboardClientEncodings: [String: String] = [
         "copyKeyboardBacklightIDs": "@@:",
-        "isKeyboardBuiltIn:": "B@:Q",
+        "isKeyboardBuiltIn:": "\(keyboardBoolEncoding)@:Q",
         "brightnessForKeyboard:": "f@:Q",
-        "setBrightness:forKeyboard:": "B@:fQ",
-        "isBacklightSuppressedOnKeyboard:": "B@:Q",
-        "isBacklightDimmedOnKeyboard:": "B@:Q",
+        "setBrightness:forKeyboard:": "\(keyboardBoolEncoding)@:fQ",
+        "isBacklightSuppressedOnKeyboard:": "\(keyboardBoolEncoding)@:Q",
+        "isBacklightDimmedOnKeyboard:": "\(keyboardBoolEncoding)@:Q",
     ]
 
     /// Selectors the backlight cannot work without. The two suppressed and

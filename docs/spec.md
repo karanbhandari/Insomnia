@@ -33,8 +33,9 @@ closed bag. Its design goals are to:
 ## Platform
 
 - macOS 15 or later on Intel and Apple Silicon. The Intel compatibility port
-  retains the private display guard (macOS 26/27 only) and requires a separately
-  approved real-hardware lid/sleep and recovery trial.
+  retains the private display guard (macOS 26/27 only). A supervised short
+  AC-powered Intel lid-close trial passed; broader hardware/recovery checks
+  still require separate approval and validation.
 - Swift 6, SwiftUI content hosted in a custom `NSStatusItem`, Swift Package.
   No Xcode project.
 - `build-app.sh` assembles a minimal `Insomnia.app` bundle (`LSUIElement =

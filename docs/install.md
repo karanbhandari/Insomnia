@@ -6,12 +6,13 @@ step and what each one checks. A coding agent can follow
 steps on this page.
 
 This fork targets **macOS 15 or later on Intel and Apple Silicon Macs**.
-Use the compatibility branch of `karanbhandari/Insomnia` for this port:
+Use `main` in `karanbhandari/Insomnia` for this port:
 upstream releases, including `v0.1.0`, are not retroactively made compatible.
 On macOS 15, display darkening is refused by the existing private-API guard
 and Settings explains why. Keyboard backlight control checks the native
-Objective-C signatures before any call. Intel lid/sleep and recovery behavior
-have not yet had a supervised hardware trial.
+Objective-C signatures before any call. A short supervised AC-powered Intel
+lid-close trial passed, including session-end sleep restoration; battery-only,
+long-duration and crash/reboot recovery behavior remain unvalidated.
 
 ## Channels
 
@@ -138,7 +139,7 @@ Requires **Xcode with Swift 6.2 or later**. Clone the latest stable tag, or a
 nightly tag for the newest code, rather than `main`. If the releases page has
 no release yet, leave out `--branch v<version>` to build `main`:
 
-For this fork's compatibility port, use the branch and build-only instructions
+For this fork's compatibility port, use the fork and build-only instructions
 in the [README](../README.md#build-from-source) instead of the upstream clone
 below. `scripts/build-app.sh --output dist` creates a bundle without privileged
 installation. `--universal` builds both CPUs; the default builds for this host.

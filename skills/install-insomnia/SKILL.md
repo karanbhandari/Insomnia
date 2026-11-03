@@ -15,9 +15,10 @@ user the exact command to run in Terminal and wait for them to say it finished.
    15 or later on Intel and Apple Silicon (`sw_vers -productVersion`).
    Upstream releases, including `v0.1.0`, predate the port; never install them
    as an Intel/macOS 15 workaround. Follow the fork's README build-only
-   instructions for its compatibility branch. On macOS 15, Settings explains
+   instructions for its `main` branch. On macOS 15, Settings explains
    that private display-brightness calls are disabled. Intel hardware
-   lid/sleep and recovery testing still needs separate, supervised approval.
+   short AC-powered lid-close testing passed; broader lid/sleep and recovery
+   testing still needs separate, supervised approval.
 2. **Pick the channel.** Use the latest stable release unless the user asked
    for the newest nightly. If the release is `v0.1.0`, follow its release notes
    instead of docs/install.md.

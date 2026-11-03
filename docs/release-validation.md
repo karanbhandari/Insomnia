@@ -5,7 +5,7 @@ behind the safety fixes. It is not a certification that unattended or
 lid-closed use is safe. The checks to run before the next release are in
 [Releasing](releasing.md#real-mac-checks-before-a-release).
 
-## Intel/macOS 15 compatibility port (local, build-only)
+## Intel/macOS 15 compatibility port (initial build-only validation)
 
 Host: MacBookPro16,1, 6-core Intel Core i7, macOS 15.8.2 (24H230),
 x86_64. Toolchain: the already installed Xcode Swift 6.2.4 and macOS 26.2
@@ -81,6 +81,46 @@ write, power-setting change, Keychain/network modification, or Gatekeeper
 bypass was performed. No normal app session or physical lid/sleep trial
 was started. Those checks require separate, supervised user approval;
 these results do not establish that unattended Intel lid-closed use is safe.
+
+## Supervised Intel/macOS 15 lid-close trial
+
+After the build-only checks above, the user explicitly approved installation
+and a supervised physical trial of compatibility commit
+`d24e86ba288c23a14c6cf1d9cd0b0c159da98cd9` on the same Intel/macOS 15
+host. The user ran the installer locally. The installed x86_64 bundle passed
+`codesign --verify --strict --deep`, and the loaded recovery LaunchAgent was
+confirmed. No Gatekeeper bypass was used.
+
+On November 3, 2026, on AC power with only the built-in display reported,
+the app logged lid close at 16:21:02 and lid open at 16:22:10 (UTC-05:00):
+**68 seconds closed**. A separate read-only monitor sampled wall-clock time,
+IOKit `AppleClamshellState`, and `pmset -g` approximately every two seconds.
+It created no power assertion or keep-awake helper. It recorded 33 closed-lid
+samples, with a maximum gap of three seconds over the whole capture, while
+macOS reported `SleepDisabled 1`. The app also recorded a battery observation
+during closure. `pmset -g log` showed no system Sleep/Wake transition in that
+interval. This supports continuous execution while closed, not merely a
+countdown catching up after wake.
+
+Default optional lid actions remained enabled during this trial. App logs
+reported keyboard backlight off, speaker mute, one selected app process
+frozen, and Low Power Mode enabled. Reopening reported successful process
+resume, audio/keyboard restoration, and Low Power Mode off. Physical
+brightness/audio levels were not independently measured. The display
+brightness guard continued to refuse DisplayServices calls on macOS 15;
+a logged display-sleep request does not establish that the panel went dark.
+
+The user ended the session at 16:24:03. Read-only checks then confirmed
+`SleepDisabled 0`, `lowpowermode 0`, absent `session.json`, and a clean
+`state.json`: no owned sleep/Low Power Mode change, frozen processes, saved
+audio outputs, App Nap overrides, or Docker freeze. `pmset -g therm` reported
+no thermal/performance warning. The bounded monitor was stopped.
+
+**Result:** passed this short AC-powered physical lid-close keep-awake trial
+and user-ended session cleanup. Battery-only and long-duration behavior,
+deadline expiry while closed, crash/reboot recovery, and other optional
+integrations were not validated. The approved installation remains present.
+This limited trial is not a certification of unattended lid-closed safety.
 
 ## v0.1.0
 

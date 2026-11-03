@@ -45,12 +45,15 @@ This fork targets macOS 15 or later on Intel and Apple Silicon Macs.
 On macOS 15, private display-brightness calls remain disabled: Settings shows
 the reason, and lid close leaves the display brightness alone. Keyboard
 backlight control runs only if its runtime signatures match this CPU's ABI.
-Real lid/sleep and privileged recovery behavior on Intel still need a
-separately approved, supervised trial; automated tests are not hardware validation.
+A supervised Intel/macOS 15 trial confirmed continued execution with the lid
+closed for 68 seconds on AC power and normal sleep restoration after ending
+the session. Battery-only, long-duration and crash/reboot recovery checks
+remain unvalidated; this is not a safety certification.
+See the [validation record](docs/release-validation.md#supervised-intelmacos-15-lid-close-trial).
 
 The upstream releases linked below, including `v0.1.0`, predate this port and
-may require Apple Silicon and macOS 26. For Intel/macOS 15, build this fork's
-compatibility branch, not an upstream release.
+may require Apple Silicon and macOS 26. For Intel/macOS 15, build this fork,
+not an upstream release.
 
 Paste this into your coding agent:
 
@@ -73,7 +76,7 @@ anything.
 Needs Xcode with Swift 6.2 or later. For the compatibility port, use this fork:
 
 ```bash
-git clone --branch karanbhandari-intel-macos-compatibility https://github.com/karanbhandari/Insomnia.git
+git clone --branch main https://github.com/karanbhandari/Insomnia.git
 cd Insomnia
 ./scripts/build-app.sh --output dist
 ```
